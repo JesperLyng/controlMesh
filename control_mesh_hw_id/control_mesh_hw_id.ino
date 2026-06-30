@@ -1,5 +1,5 @@
 /*
- * Boat-fan controller (ESP32) — IR + ESP-NOW mesh
+ * Fan controller (ESP32) — IR + ESP-NOW mesh
  * -------------------------------------------------
  * All five nodes are IDENTICAL — no code changes per board.
  * FAN_ID (1-5) is set with jumpers to GND on three input pins:
