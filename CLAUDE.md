@@ -8,7 +8,7 @@ DIY controller for 5× 12V 4-pin PWM fans (Arctic P14 Pro PST) on a sailboat, dr
 
 **Read `docs/HANDOVER.md` first.** It is the canonical context document and contains all architectural rationale, hardware decisions, accepted trade-offs, and the validated test-on-hardware roll-out plan. The repo has no live deployment yet — nothing has been tested on physical hardware.
 
-The codebase, comments, and HANDOVER.md are written in Danish. Match that language when editing code comments or docs; English is fine in commit messages and ephemeral output.
+`docs/HANDOVER.md` is written in Danish — keep it that way when editing. Code, code comments, and other docs are in English.
 
 ## Files
 
