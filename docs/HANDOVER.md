@@ -18,7 +18,7 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 
 **Tre regler holder meshet stabilt** (implementeret i firmwaren, se kommentarer i `loop()` og `accept()`):
 - **R1 — Ét hop:** kun IR-modtagne kommandoer videresendes via ESP-NOW. Kommandoer modtaget via ESP-NOW udføres, men sendes ALDRIG videre. Forhindrer broadcast-storm/loop.
-- **R2 — Ingen repeat-frames:** IR repeat-frames (`IRDATA_FLAGS_IS_REPEAT`, afsendt når man holder en tast nede) ignoreres helt. Hvert fysisk tryk giver præcis ét diskret skridt. Det gør hastighedsregulering til "tryk pr. trin" snarere end "hold for at ramp'e" — bevidst valg, ikke en begrænsning der skal rettes.
+- **R2 — Ingen repeat-frames, undtaget VOL+/-:** IR repeat-frames (`IRDATA_FLAGS_IS_REPEAT`) ignoreres, MEN `CMD_VOL_UP` og `CMD_VOL_DOWN` accepteres når man holder tasten nede — cirka 3 trin/sek (`VOL_REPEAT_MS = 333`). Alle andre kommandoer forbliver "ét fysisk tryk = ét diskret skridt". Accepterede VOL-gentagelser går gennem den normale sti (dedup + applyCommand + meshBroadcast) så resten af meshet ramper synkront.
 - **R3 — Dedup-vindue (150 ms):** Da flere noder typisk hører samme IR-tryk samtidig, ville de hver isæ udføre + videresende uden denne regel, hvilket ville give dobbelt-trin eller uforudsigelig power-toggle. Samme kommando inden for 150 ms efter sidste udførsel ignoreres.
 
 **Hardware-baseret node-ID, ikke kode pr. board.** Tre GPIO-pins med interne pullups (`INPUT_PULLUP`) og jumpere til GND giver 5 mulige ID'er (se tabel i kildekoden). Al fem noder flashes med identisk binary. Dette var et eksplicit krav fra brugeren — undgå at skulle ændre kildekode/genkompilere pr. enhed.
@@ -38,7 +38,7 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 - MP1584 buck-konverter 12V→3,3V/5V
 - 10 kΩ pullup-modstand fra PWM-pin til 3,3V
 - LED + 330 Ω serie-modstand på SIG_LED_PIN (blinker ved gyldigt modtaget signal — bruges til feltdebugging af IR-dækning)
-- 3× jumpere til ID-pins (GPIO 16/17/18 — **tjek for PSRAM-konflikt**, se Kendte risici)
+- 3× jumpere til ID-pins (GPIO 32/33/25 — alle general-purpose, virker på både plain ESP32 og WROVER/PSRAM-varianter)
 - 12V hanstik (cigarettænder-type), inline-sikring 1-2A
 
 **Fælles:**
@@ -72,14 +72,15 @@ Valg (inden for aktiv scope):
 Handling (kun aktiv på noder hvis THIS_NODE_SCOPE matcher activeScope):
   + / -    : ét trin op/ned på det valgte (tænder hvis slukket)
   POWER    : tænd/sluk det valgte
-  MUTE     : sluk det valgte uafhængigt af nuværende status
+  MUTE     : sluk det valgte OG nulstil niveauet til 0
+             (næste POWER-tænd starter fra minimum)
 ```
 
 Scope er "sticky": tryk fx GUL → MUTE slukker alle LED-strips, uden mellemliggende "0"-tryk, fordi et farvetryk nulstiller `selectedFan` til `SELECT_ALL`. Vil man narrow'e ned bagefter, trykker man et taltryk 1-5. Valg-tilstand er persistent indtil næste farve- eller taltryk.
 
 `SEL_LED` på en blæser-node lyser når `activeScope == SCOPE_FAN` OG (`selectedFan == fanID` eller "alle") — altså kun når noden faktisk er adresserbar lige nu.
 
-Hastighedstrin: `{40, 55, 70, 85, 100}` % duty — 5 trin, indeks 2 (70%) er startværdi efter boot. Disse tal er ikke verificeret mod faktiske blæsere endnu; 40% blev valgt som et gæt på et fornuftigt stall-gulv og bør justeres efter test.
+Niveau-skalaen er 0..10 (elleve diskrete trin) for alle scopes — hver enhedstype mapper 0..10 til sin egen output-range. For blæserne: `{25, 33, 40, 48, 55, 63, 70, 78, 85, 93, 100}` % duty, lineær fra 25% (niveau 0) til 100% (niveau 10), ca. 7,5%-per-trin. Boot-værdi er indeks 5 (63%). 25% er under det typiske stall-gulv for PC-blæsere — det skal verificeres på fysisk hardware om blæserne rent faktisk starter fra niveau 0 eller 1. LED-firmwaren (fremtidig) mapper 0..10 til sin egen lysstyrke-range.
 
 ### IR-koder (Samsung, address 0x0E)
 
@@ -110,17 +111,15 @@ Hentet fra URC1210 med `ir_diagnostic.ino`. De koder der ikke bruges lige nu er 
 
 ## Kendte risici / ting at validere før eller under videre udvikling
 
-1. **GPIO-konflikt på PSRAM-boards.** ID-pins (16/17/18) og blæser-pins (4/5/19) er valgt for et "almindeligt" ESP32-board uden PSRAM. På WROVER-varianter er GPIO 16/17 optaget af SPI til PSRAM. Hvis det konkrete board har PSRAM, skal ID-pins flyttes (forslag: GPIO 32/33/34 — bemærk at 34+ er input-only uden intern pullup og kræver eksterne 10 kΩ-modstande).
+1. **IR-protokol bekræftet som Samsung32.** Firmwaren har `#define DECODE_SAMSUNG` aktiveret (skiftet fra NEC efter test med `ir_diagnostic.ino` — den valgte enhedskode på fjernbetjeningen sender Samsung32-frames). Hvis fjernbetjeningen senere ændres eller en anden enhedskode vælges, kør diagnostik-sketchen igen — er protokollen ikke længere Samsung, skal enten enhedskoden justeres eller et yderligere `#define DECODE_*` tilføjes.
 
-2. **IR-protokol bekræftet som Samsung32.** Firmwaren har `#define DECODE_SAMSUNG` aktiveret (skiftet fra NEC efter test med `ir_diagnostic.ino` — den valgte enhedskode på fjernbetjeningen sender Samsung32-frames). Hvis fjernbetjeningen senere ændres eller en anden enhedskode vælges, kør diagnostik-sketchen igen — er protokollen ikke længere Samsung, skal enten enhedskoden justeres eller et yderligere `#define DECODE_*` tilføjes.
+2. **Boot-failsafe er delvis, ikke komplet** (se Arkitekturbeslutninger ovenfor) — accepteret af brugeren, men bør nævnes hvis projektet skal "hærdes" senere.
 
-3. **Boot-failsafe er delvis, ikke komplet** (se Arkitekturbeslutninger ovenfor) — accepteret af brugeren, men bør nævnes hvis projektet skal "hærdes" senere.
+3. **Hastighedstrin og laveste duty (25%) er ikke valideret mod fysisk blæser.** Starter fanen fra 25% duty? Skal bekræftes ved første hardwaretest — hæv til fx 30-40% hvis fanen ikke starter pålideligt fra niveau 0.
 
-4. **Hastighedstrin og stall-gulv (40%) er ikke valideret mod fysisk blæser.** Bør justeres efter første hardwaretest.
+4. **Adressefiltrering findes ikke.** Firmwaren filtrerer kun på Samsung `command`-byte, ikke `address`. Brugeren har vurderet risikoen for interferens fra andre både/fjernbetjeninger som teoretisk og lav i praksis (IR kræver sigtelinje/nær refleksion) — bevidst fravalgt, ikke overset.
 
-5. **Adressefiltrering findes ikke.** Firmwaren filtrerer kun på NEC `command`-byte, ikke `address`. Brugeren har vurderet risikoen for interferens fra andre både/fjernbetjeninger som teoretisk og lav i praksis (IR kræver sigtelinje/nær refleksion) — bevidst fravalgt, ikke overset.
-
-6. **`ledc`-API har forskellig signatur mellem ESP32 Arduino-core 2.x og 3.x.** Firmwaren håndterer dette med `#if ESP_ARDUINO_VERSION_MAJOR >= 3` — vigtigt at bevare ved fremtidige ændringer i PWM-relateret kode.
+5. **`ledc`-API har forskellig signatur mellem ESP32 Arduino-core 2.x og 3.x.** Firmwaren håndterer dette med `#if ESP_ARDUINO_VERSION_MAJOR >= 3` — vigtigt at bevare ved fremtidige ændringer i PWM-relateret kode.
 
 ## Fremtidig udvidelse (scope-infrastruktur bygget — LED-node udestår)
 

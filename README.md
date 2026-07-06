@@ -74,14 +74,23 @@ Selection (within the active scope):
 Action (only fires on nodes whose class matches the active scope):
   + / -    : one step up/down on the current selection
   POWER    : toggle the current selection on/off
-  MUTE     : force the current selection off
+  MUTE     : force the current selection off and reset its level to 0
+             (a subsequent POWER-on starts from the minimum)
 ```
 
 The scope prefix is sticky — pressing e.g. YELLOW followed by MUTE is
 "turn off all LEDs" without an explicit `0`, because pressing a color
 also resets the selection to "all in scope".
 
-Fan node: five speed steps `40, 55, 70, 85, 100` % duty (start 70 %).
+Level scale is **0–10** across every scope (eleven discrete steps); each
+device class maps that range to its own output. Fan node: linear from
+25 % duty at level 0 to 100 % at level 10 (7.5 %-per-step), boot value
+level 5 (63 %). Whether the fans start reliably at 25 % duty needs
+hardware verification.
+
+Holding VOL+ or VOL− ramps at ~3 steps per second while held; every
+other command remains one-per-keypress.
+
 Keys `6`–`9` are captured but unmapped — reserved for future
 `CMD_SELECT` expansion.
 

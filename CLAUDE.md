@@ -22,7 +22,7 @@ Each is a standalone Arduino sketch (the `.ino` filename matches its parent dire
 No automated build, lint, or test exists — this is an Arduino project.
 
 - Toolchain: Arduino IDE *or* `arduino-cli`, ESP32 Arduino core (2.x or 3.x — the firmware compiles for both via `#if ESP_ARDUINO_VERSION_MAJOR >= 3`), and the **IRremote** library v4.x.
-- Board: a plain ESP32 dev board (no PSRAM — see GPIO conflict note below).
+- Board: any ESP32 dev board — pin choice is safe on both plain and WROVER (PSRAM) variants.
 - Serial monitor: 115200 baud.
 - All nodes must use the same Wi-Fi channel (`WIFI_CHANNEL = 1`).
 
@@ -31,7 +31,7 @@ No automated build, lint, or test exists — this is an Arduino project.
 These three rules together keep the mesh stable. They are implemented in `loop()` and `accept()` and explained in HANDOVER.md.
 
 - **R1 — single hop.** Only IR-received commands are rebroadcast via ESP-NOW. Commands received via ESP-NOW are executed but NEVER forwarded. Prevents broadcast storms.
-- **R2 — no repeat frames.** IR repeat frames (`IRDATA_FLAGS_IS_REPEAT`) are ignored entirely. Each physical keypress is one discrete step. Holding a key does not ramp — this is intentional, not a bug.
+- **R2 — no repeat frames, except VOL+/-.** IR repeat frames (`IRDATA_FLAGS_IS_REPEAT`) are ignored, EXCEPT for `CMD_VOL_UP` and `CMD_VOL_DOWN`, which are accepted at `VOL_REPEAT_MS = 333` ms cadence (~3 steps/sec) while held. All other commands remain one-per-keypress. Accepted VOL repeats go through the normal path (dedup update, applyCommand, meshBroadcast), so siblings ramp in sync.
 - **R3 — 150 ms dedup window.** The same command within 150 ms of the last accepted one is dropped, because several nodes typically hear the same IR pulse simultaneously.
 
 Other deliberate choices that look like omissions but are not:
@@ -44,7 +44,6 @@ Other deliberate choices that look like omissions but are not:
 
 ## Hardware notes that affect code
 
-- **GPIO conflict on PSRAM boards.** ID-pins (16/17/18) collide with PSRAM SPI on WROVER variants. If switching to a PSRAM board, move ID pins (HANDOVER suggests GPIO 32/33/34 — note 34+ are input-only without internal pullup and need external 10 kΩ).
 - **LEDC API differs between ESP32 core 2.x and 3.x.** `pwmBegin()` / `pwmWrite()` already branch on `ESP_ARDUINO_VERSION_MAJOR`. Preserve both branches in any PWM-related edit.
 - **PWM frequency is 25 kHz** (Intel 4-pin PWM fan spec). Do not change.
 - **CPU is clocked at 80 MHz** (`CPU_FREQ_MHZ`, set in `setup()` before Serial/IR init). 80 MHz is the ESP32 floor that still keeps the WiFi radio alive for ESP-NOW; going lower disables the radio. Do not raise back to 240 MHz "for performance" — nothing here is CPU-bound.
