@@ -72,8 +72,10 @@ Valg (inden for aktiv scope):
 Handling (kun aktiv på noder hvis THIS_NODE_SCOPE matcher activeScope):
   + / -    : ét trin op/ned på det valgte (tænder hvis slukket)
   POWER    : tænd/sluk det valgte
-  MUTE     : sluk det valgte OG nulstil niveauet til 0
-             (næste POWER-tænd starter fra minimum)
+  MUTE     : toggle — første tryk gemmer nuværende tilstand og tvinger
+             slukket + niveau 0; andet tryk gendanner den gemte tilstand.
+             VOL+/-, POWER eller endnu et OFF-cycle imellem nulstiller
+             det gemte "bookmark".
 ```
 
 Scope er "sticky": tryk fx GUL → MUTE slukker alle LED-strips, uden mellemliggende "0"-tryk, fordi et farvetryk nulstiller `selectedFan` til `SELECT_ALL`. Vil man narrow'e ned bagefter, trykker man et taltryk 1-5. Valg-tilstand er persistent indtil næste farve- eller taltryk.

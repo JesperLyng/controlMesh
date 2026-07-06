@@ -18,8 +18,11 @@
  *   "0"      : select ALL instances within the active scope
  *   + / -    : one step up/down on the current selection
  *   POWER    : toggle the current selection on/off
- *   MUTE     : force the current selection off AND reset its level to 0
- *              (a subsequent POWER-on starts from the minimum)
+ *   MUTE     : first press bookmarks the current state, then forces the
+ *              selection off with level reset to 0.
+ *              Second MUTE press restores the bookmarked state (unmute).
+ *              Any VOL+/-, POWER (or another OFF-cycle) between presses
+ *              clears the bookmark.
  *
  * Commands other than scope/select are only acted on when the active scope
  * matches THIS_NODE_SCOPE — so pressing YELLOW then MUTE is a no-op on fan
@@ -103,7 +106,7 @@ const uint8_t CMD_SELECT_ALL  = 0x00;  // key "0"
 const uint8_t CMD_VOL_UP      = 0x14;
 const uint8_t CMD_VOL_DOWN    = 0x15;
 const uint8_t CMD_POWER       = 0x0C;  // toggle the current selection
-const uint8_t CMD_OFF         = 0x0D;  // MUTE: force off + reset level to 0
+const uint8_t CMD_OFF         = 0x0D;  // MUTE: toggle — first press mutes, second restores
 
 // Scope selectors (color keys). Every node tracks activeScope so the mesh
 // stays in sync, but only nodes whose THIS_NODE_SCOPE matches act on the
@@ -168,6 +171,13 @@ int8_t   levelIndex  = 5;                 // 0..10 scale; midpoint at boot (63% 
 uint8_t  lastCmd     = 0xFF;
 uint32_t lastActMs   = 0;
 uint32_t lastVolMs   = 0;                 // last accepted VOL step (R2 exception)
+
+// MUTE toggle state — a MUTE press bookmarks (fanOn, levelIndex) so a second
+// MUTE press restores them. Any VOL+/-, POWER (or another OFF-cycle) clears
+// the bookmark, since the user has actively changed the state.
+bool     muted       = false;
+bool     savedFanOn  = false;
+int8_t   savedLevel  = 5;
 
 // ---------- ESP-NOW receive queue ----------
 volatile uint8_t rxBuf[8];
@@ -277,27 +287,42 @@ const char* applyCommand(uint8_t cmd) {
 
   if (cmd == CMD_VOL_UP) {
     if (!mine) return "SPD+ skip";
+    muted = false;               // active change clears the MUTE bookmark
     if (levelIndex < NUM_LEVELS - 1) levelIndex++;
     fanOn = true; applyOutput();
     return "SPD+";
   }
   if (cmd == CMD_VOL_DOWN) {
     if (!mine) return "SPD- skip";
+    muted = false;
     if (levelIndex > 0) levelIndex--;
     fanOn = true; applyOutput();
     return "SPD-";
   }
   if (cmd == CMD_POWER) {
     if (!mine) return "PWR skip";
+    muted = false;
     fanOn = !fanOn; applyOutput();
     return fanOn ? "PWR on" : "PWR off";
   }
   if (cmd == CMD_OFF) {
     if (!mine) return "OFF skip";
-    fanOn = false;
-    levelIndex = 0;              // reset — MUTE means "back to zero"
+    if (muted) {
+      // Second MUTE press: restore whatever was saved.
+      fanOn      = savedFanOn;
+      levelIndex = savedLevel;
+      muted      = false;
+      applyOutput();
+      return "UNMUTE";
+    }
+    // First MUTE press: bookmark, then force off + level 0.
+    savedFanOn = fanOn;
+    savedLevel = levelIndex;
+    fanOn      = false;
+    levelIndex = 0;
+    muted      = true;
     applyOutput();
-    return "OFF";
+    return "MUTE";
   }
   return "unmapped";
 }

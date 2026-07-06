@@ -74,8 +74,10 @@ Selection (within the active scope):
 Action (only fires on nodes whose class matches the active scope):
   + / -    : one step up/down on the current selection
   POWER    : toggle the current selection on/off
-  MUTE     : force the current selection off and reset its level to 0
-             (a subsequent POWER-on starts from the minimum)
+  MUTE     : toggle — first press bookmarks state then forces off with
+             level reset to 0; second press restores the bookmark.
+             Any VOL+/-, POWER, or another OFF-cycle in between clears
+             the bookmark.
 ```
 
 The scope prefix is sticky — pressing e.g. YELLOW followed by MUTE is
