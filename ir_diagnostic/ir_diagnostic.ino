@@ -5,19 +5,18 @@
  * use this sketch to see which PROTOCOL it actually transmits and
  * which command value each key produces.
  *
- * It decodes ALL protocols IRremote supports — not just NEC — so you
+ * It decodes ALL protocols IRremote supports — not just Samsung — so you
  * can immediately tell whether the device code is compatible with the
- * simple mesh firmware (which only understands NEC).
+ * simple mesh firmware (which currently only understands Samsung).
  *
  * Usage:
  *   1. Flash this sketch, open Serial Monitor at 115200 baud.
  *   2. Press every key you plan to use (1-5, +, -, power, 0).
  *   3. Read the line for each: protocol, address, command.
- *   4. If the protocol is NEC (or "NEC2"/"ONKYO" — variants IRremote
- *      still reports as the NEC family) -> use the 'command' value
- *      directly in CMD_SELECT[] etc. in the mesh firmware.
- *   5. If the protocol is anything else (RC5, Samsung32, Sony, etc.) ->
- *      try the next device code on the list for your brand and test again.
+ *   4. If the protocol is Samsung -> use the 'command' value directly
+ *      in CMD_SELECT[] etc. in the mesh firmware.
+ *   5. If the protocol is anything else (NEC, RC5, Sony, etc.) -> try
+ *      the next device code on the list for your brand and test again.
  *
  * Requires: "IRremote" library v4.x.
  */
@@ -53,8 +52,8 @@ void loop() {
       if (d.protocol == UNKNOWN) {
         Serial.println(F("  -> UNKNOWN: could not be decoded as any known protocol."));
         Serial.println(F("     Try a different device code on the remote."));
-      } else if (d.protocol != NEC) {
-        Serial.println(F("  -> Not NEC. Either extend the mesh firmware or change the device code."));
+      } else if (d.protocol != SAMSUNG) {
+        Serial.println(F("  -> Not Samsung. Either extend the mesh firmware or change the device code."));
       }
     }
 

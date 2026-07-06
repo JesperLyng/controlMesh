@@ -18,7 +18,7 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 
 **Tre regler holder meshet stabilt** (implementeret i firmwaren, se kommentarer i `loop()` og `accept()`):
 - **R1 — Ét hop:** kun IR-modtagne kommandoer videresendes via ESP-NOW. Kommandoer modtaget via ESP-NOW udføres, men sendes ALDRIG videre. Forhindrer broadcast-storm/loop.
-- **R2 — Ingen repeat-frames:** NEC repeat-frames (afsendt når man holder en tast nede) ignoreres helt. Hvert fysisk tryk giver præcis ét diskret skridt. Det gør hastighedsregulering til "tryk pr. trin" snarere end "hold for at ramp'e" — bevidst valg, ikke en begrænsning der skal rettes.
+- **R2 — Ingen repeat-frames:** IR repeat-frames (`IRDATA_FLAGS_IS_REPEAT`, afsendt når man holder en tast nede) ignoreres helt. Hvert fysisk tryk giver præcis ét diskret skridt. Det gør hastighedsregulering til "tryk pr. trin" snarere end "hold for at ramp'e" — bevidst valg, ikke en begrænsning der skal rettes.
 - **R3 — Dedup-vindue (150 ms):** Da flere noder typisk hører samme IR-tryk samtidig, ville de hver isæ udføre + videresende uden denne regel, hvilket ville give dobbelt-trin eller uforudsigelig power-toggle. Samme kommando inden for 150 ms efter sidste udførsel ignoreres.
 
 **Hardware-baseret node-ID, ikke kode pr. board.** Tre GPIO-pins med interne pullups (`INPUT_PULLUP`) og jumpere til GND giver 5 mulige ID'er (se tabel i kildekoden). Al fem noder flashes med identisk binary. Dette var et eksplicit krav fra brugeren — undgå at skulle ændre kildekode/genkompilere pr. enhed.
@@ -57,22 +57,49 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 ## Kommandosæt (fjernbetjening → funktion)
 
 ```
-Tast 1–5 : vælg blæser (gælder for efterfølgende +/-/power)
-+        : ét hastighedstrin op på den VALGTE blæser (tænder hvis slukket)
--        : ét hastighedstrin ned på den VALGTE blæser
-POWER    : tænd/sluk den VALGTE blæser
-"0"      : sluk ALLE blæsere
+Tast 1–5 : vælg en specifik blæser (gælder for efterfølgende kommandoer)
+Tast 0   : vælg ALLE blæsere (gælder for efterfølgende kommandoer)
++ / -    : ét hastighedstrin op/ned på det valgte (tænder hvis slukket)
+POWER    : tænd/sluk det valgte
+MUTE     : sluk det valgte uafhængigt af nuværende status
 ```
+
+Valg-tilstand er persistent: har man valgt "alle" med tast 0, gælder efterfølgende +/-/POWER/MUTE alle blæsere, indtil man vælger en specifik igen med 1-5. `SEL_LED` lyser på en node når `selectedFan == fanID` eller når "vælg alle" er aktiv.
 
 Hastighedstrin: `{40, 55, 70, 85, 100}` % duty — 5 trin, indeks 2 (70%) er startværdi efter boot. Disse tal er ikke verificeret mod faktiske blæsere endnu; 40% blev valgt som et gæt på et fornuftigt stall-gulv og bør justeres efter test.
 
-IR-kommandokoderne i firmwaren (`CMD_SELECT[]`, `CMD_VOL_UP` osv.) er **placeholder-værdier** fra en typisk "car MP3" NEC-fjernbetjening og skal opdateres, når den faktiske fjernbetjening er valgt og testet med `ir_diagnostik.ino`.
+### IR-koder (Samsung, address 0x0E)
+
+Hentet fra URC1210 med `ir_diagnostic.ino`. De koder der ikke bruges lige nu er også taget med — de kan indsættes uden at flashe fjernbetjeningen om igen, hvis firmwaren senere udvides.
+
+| Command | Tast | Rolle i fan-firmwaren |
+|---|---|---|
+| `0x00` | 0     | `CMD_SELECT_ALL` — vælg alle blæsere |
+| `0x01` | 1     | `CMD_SELECT[0]` — vælg blæser 1 |
+| `0x02` | 2     | `CMD_SELECT[1]` — vælg blæser 2 |
+| `0x03` | 3     | `CMD_SELECT[2]` — vælg blæser 3 |
+| `0x04` | 4     | `CMD_SELECT[3]` — vælg blæser 4 |
+| `0x05` | 5     | `CMD_SELECT[4]` — vælg blæser 5 |
+| `0x06` | 6     | *reserveret — evt. fremtidig CMD_SELECT eller anden enhedstype* |
+| `0x07` | 7     | *reserveret* |
+| `0x08` | 8     | *reserveret* |
+| `0x09` | 9     | *reserveret* |
+| `0x0C` | POWER | `CMD_POWER` — tænd/sluk det valgte |
+| `0x0D` | MUTE  | `CMD_OFF` — sluk det valgte |
+| `0x12` | CH+   | *reserveret — evt. sekundær navigation* |
+| `0x13` | CH-   | *reserveret* |
+| `0x14` | VOL+  | `CMD_VOL_UP` — ét hastighedstrin op |
+| `0x15` | VOL-  | `CMD_VOL_DOWN` — ét hastighedstrin ned |
+| `0xA0` | RED   | *reserveret — fremtidig enhedstype (fx pumper)* |
+| `0xA1` | GREEN | *reserveret — fremtidig enhedstype* |
+| `0xA2` | YELLOW| *reserveret — planlagt: LED-strips (se afsnit længere nede)* |
+| `0xA3` | BLUE  | *reserveret — planlagt: blæsere som eksplicit scope-vælger* |
 
 ## Kendte risici / ting at validere før eller under videre udvikling
 
 1. **GPIO-konflikt på PSRAM-boards.** ID-pins (16/17/18) og blæser-pins (4/5/19) er valgt for et "almindeligt" ESP32-board uden PSRAM. På WROVER-varianter er GPIO 16/17 optaget af SPI til PSRAM. Hvis det konkrete board har PSRAM, skal ID-pins flyttes (forslag: GPIO 32/33/34 — bemærk at 34+ er input-only uden intern pullup og kræver eksterne 10 kΩ-modstande).
 
-2. **IR-protokol for den endelige fjernbetjening er ikke bekræftet.** Firmwaren har kun `#define DECODE_NEC` aktiveret. Brug `ir_diagnostik.ino` (afkoder alle protokoller) til at bekræfte at den valgte fjernbetjenings-enhedskode rent faktisk afkodes som NEC, før den sættes i produktion. Hvis den viser sig at være en anden protokol (RC5, Samsung32 osv.), skal enten en anden enhedskode vælges på fjernbetjeningen, eller `applyCommand()`/decode-logikken udvides.
+2. **IR-protokol bekræftet som Samsung32.** Firmwaren har `#define DECODE_SAMSUNG` aktiveret (skiftet fra NEC efter test med `ir_diagnostic.ino` — den valgte enhedskode på fjernbetjeningen sender Samsung32-frames). Hvis fjernbetjeningen senere ændres eller en anden enhedskode vælges, kør diagnostik-sketchen igen — er protokollen ikke længere Samsung, skal enten enhedskoden justeres eller et yderligere `#define DECODE_*` tilføjes.
 
 3. **Boot-failsafe er delvis, ikke komplet** (se Arkitekturbeslutninger ovenfor) — accepteret af brugeren, men bør nævnes hvis projektet skal "hærdes" senere.
 

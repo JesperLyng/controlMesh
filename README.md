@@ -61,14 +61,17 @@ default `1`).
 ## Remote keys (fan node)
 
 ```
-Keys 1–5 : select fan
-+        : one speed step up on the SELECTED fan (turns it on if off)
--        : one speed step down on the SELECTED fan
-POWER    : toggle the SELECTED fan on/off
-0        : turn ALL fans off
+Keys 1–5 : select a specific fan (subsequent commands apply to it)
+0        : select ALL fans (subsequent commands apply to every fan)
++        : one speed step up on the current selection (turns it on if off)
+-        : one speed step down on the current selection
+POWER    : toggle the current selection on/off
+MUTE     : force the current selection off
 ```
 
 Five speed steps: `40, 55, 70, 85, 100` % duty (start value: 70 %).
+Keys `6`–`9` are captured but unmapped — reserved for future
+`CMD_SELECT` expansion or another device class on the same mesh.
 
 ## Mesh rules
 

@@ -16,15 +16,16 @@
  *
  * For Arctic P14 Pro PST and other 4-pin PWM fans (25 kHz signal).
  *
- *   Keys 1-5 : select fan
- *   + / -    : one speed step up/down on the SELECTED fan
- *   POWER    : toggle the SELECTED fan on/off
- *   "0"      : turn ALL fans off
+ *   Keys 1-5 : select a specific fan (subsequent commands apply to it)
+ *   "0"      : select ALL fans (subsequent commands apply to every fan)
+ *   + / -    : one speed step up/down on the current selection
+ *   POWER    : toggle the current selection on/off
+ *   MUTE     : force the current selection off
  *
  * Requires: ESP32 Arduino core (2.x or 3.x) + "IRremote" library (v4.x).
  */
 
-#define DECODE_NEC
+#define DECODE_SAMSUNG
 #include <IRremote.hpp>
 #include <WiFi.h>
 #include <esp_now.h>
@@ -60,12 +61,18 @@ void blinkUpdate() {
   }
 }
 
-// ---------- IR codes (NEC command byte) ----------
-const uint8_t CMD_SELECT[5] = {0x0C, 0x18, 0x5E, 0x08, 0x1C};
-const uint8_t CMD_VOL_UP    = 0x15;
-const uint8_t CMD_VOL_DOWN  = 0x07;
-const uint8_t CMD_POWER     = 0x43;
-const uint8_t CMD_ALL_OFF   = 0x16;
+// ---------- IR codes (Samsung command byte, address 0x0E) ----------
+// Codes 0x06..0x09 (keys 6-9) are captured but unmapped — reserved for
+// future CMD_SELECT expansion or another device class on the same mesh.
+const uint8_t CMD_SELECT[5]  = {0x01, 0x02, 0x03, 0x04, 0x05};
+const uint8_t CMD_SELECT_ALL = 0x00;   // key "0"
+const uint8_t CMD_VOL_UP     = 0x14;
+const uint8_t CMD_VOL_DOWN   = 0x15;
+const uint8_t CMD_POWER      = 0x0C;   // toggle the current selection
+const uint8_t CMD_OFF        = 0x0D;   // MUTE: force the current selection off
+
+// Sentinel: selectedFan == SELECT_ALL means "apply to every fan node".
+const uint8_t SELECT_ALL = 0;
 
 // ---------- Speed steps (% duty) ----------
 const uint8_t LEVELS[]   = {40, 55, 70, 85, 100};
@@ -160,8 +167,9 @@ bool accept(uint8_t cmd) {
 void applyCommand(uint8_t cmd) {
   for (uint8_t i = 0; i < 5; i++)
     if (cmd == CMD_SELECT[i]) { selectedFan = i + 1; return; }
+  if (cmd == CMD_SELECT_ALL) { selectedFan = SELECT_ALL; return; }
 
-  bool mine = (selectedFan == fanID);
+  bool mine = (selectedFan == SELECT_ALL) || (selectedFan == fanID);
 
   if (cmd == CMD_VOL_UP) {
     if (mine) { if (levelIndex < NUM_LEVELS - 1) levelIndex++; fanOn = true; applyOutput(); }
@@ -175,8 +183,8 @@ void applyCommand(uint8_t cmd) {
     if (mine) { fanOn = !fanOn; applyOutput(); }
     return;
   }
-  if (cmd == CMD_ALL_OFF) {
-    fanOn = false; applyOutput();
+  if (cmd == CMD_OFF) {
+    if (mine) { fanOn = false; applyOutput(); }
     return;
   }
 }
@@ -270,5 +278,7 @@ void loop() {
   }
 
   blinkUpdate();
-  if (SEL_LED_PIN >= 0) digitalWrite(SEL_LED_PIN, (selectedFan == fanID) ? HIGH : LOW);
+  if (SEL_LED_PIN >= 0)
+    digitalWrite(SEL_LED_PIN,
+                 (selectedFan == SELECT_ALL || selectedFan == fanID) ? HIGH : LOW);
 }

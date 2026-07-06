@@ -31,14 +31,15 @@ No automated build, lint, or test exists — this is an Arduino project.
 These three rules together keep the mesh stable. They are implemented in `loop()` and `accept()` and explained in HANDOVER.md.
 
 - **R1 — single hop.** Only IR-received commands are rebroadcast via ESP-NOW. Commands received via ESP-NOW are executed but NEVER forwarded. Prevents broadcast storms.
-- **R2 — no repeat frames.** NEC repeat frames are ignored entirely. Each physical keypress is one discrete step. Holding a key does not ramp — this is intentional, not a bug.
+- **R2 — no repeat frames.** IR repeat frames (`IRDATA_FLAGS_IS_REPEAT`) are ignored entirely. Each physical keypress is one discrete step. Holding a key does not ramp — this is intentional, not a bug.
 - **R3 — 150 ms dedup window.** The same command within 150 ms of the last accepted one is dropped, because several nodes typically hear the same IR pulse simultaneously.
 
 Other deliberate choices that look like omissions but are not:
 - **No NEC `address` filtering** — only the `command` byte is matched. Interference risk judged acceptable.
 - **Partial boot-window failsafe.** Fans may briefly run full speed (<1 s) during boot before LEDC initialises. The user has accepted this and explicitly rejected a MOSFET hard-cutoff. The 10 kΩ pullup on `PWM_PIN` to 3.3V plus `digitalWrite(PWM_PIN, LOW)` in `pwmBegin()` is the agreed mitigation.
-- **NEC-only decode** (`#define DECODE_NEC`). If the final remote turns out not to be NEC, prefer changing the remote's device code over expanding the decoder.
-- **Placeholder IR command bytes.** `CMD_SELECT[]`, `CMD_VOL_UP`, etc. in the mesh firmware are placeholder values from a generic NEC remote. They must be replaced with values captured by `ir_diagnostic.ino` once the final remote is chosen.
+- **Samsung-only decode** (`#define DECODE_SAMSUNG`). The final remote emits Samsung32 with the chosen device code; only that protocol is compiled in. If a future remote emits a different protocol, either change the remote's device code or add another `#define DECODE_*` alongside.
+- **`selectedFan == 0` is the "select all" sentinel** (key `0` on the remote). `applyCommand`'s `mine` predicate is `selectedFan == SELECT_ALL || selectedFan == fanID` — keep both branches when editing.
+- **IR command bytes are captured from the real remote** (Samsung, address `0x0E`) — see `docs/HANDOVER.md` for the full reference table, including keys 6-9 which are captured but unmapped.
 
 ## Hardware notes that affect code
 
