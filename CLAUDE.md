@@ -47,6 +47,7 @@ Other deliberate choices that look like omissions but are not:
 - **GPIO conflict on PSRAM boards.** ID-pins (16/17/18) collide with PSRAM SPI on WROVER variants. If switching to a PSRAM board, move ID pins (HANDOVER suggests GPIO 32/33/34 — note 34+ are input-only without internal pullup and need external 10 kΩ).
 - **LEDC API differs between ESP32 core 2.x and 3.x.** `pwmBegin()` / `pwmWrite()` already branch on `ESP_ARDUINO_VERSION_MAJOR`. Preserve both branches in any PWM-related edit.
 - **PWM frequency is 25 kHz** (Intel 4-pin PWM fan spec). Do not change.
+- **CPU is clocked at 80 MHz** (`CPU_FREQ_MHZ`, set in `setup()` before Serial/IR init). 80 MHz is the ESP32 floor that still keeps the WiFi radio alive for ESP-NOW; going lower disables the radio. Do not raise back to 240 MHz "for performance" — nothing here is CPU-bound.
 
 ## Deferred work — do not build proactively
 

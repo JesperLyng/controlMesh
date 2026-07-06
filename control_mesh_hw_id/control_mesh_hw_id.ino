@@ -110,6 +110,14 @@ const uint8_t NUM_LEVELS = sizeof(LEVELS);
 
 #define SERIAL_DEBUG 1
 
+// ---------- CPU frequency ----------
+// 80 MHz is the lowest ESP32 setting that still keeps WiFi/ESP-NOW alive
+// (40 MHz and below disable the radio). APB clock stays at 80 MHz here too,
+// so LEDC PWM timing and Serial are unaffected, and IRremote's timers
+// re-scale automatically. Halves idle current vs the 240 MHz default —
+// matters on a boat. Do not lower further without an alternative mesh transport.
+const uint32_t CPU_FREQ_MHZ = 80;
+
 // ---------- PWM (LEDC) ----------
 const uint32_t PWM_FREQ = 25000;
 const uint8_t  PWM_RES  = 8;
@@ -297,13 +305,17 @@ void meshBegin() {
 
 // ---------------------------------------------------------
 void setup() {
+  // Set CPU frequency BEFORE bringing up Serial or the IR receiver so
+  // baud-rate and IRremote timer calibration land on the final APB clock.
+  setCpuFrequencyMhz(CPU_FREQ_MHZ);
 #if SERIAL_DEBUG
   Serial.begin(115200); delay(50);
 #endif
   fanID = readFanID();
 #if SERIAL_DEBUG
-  Serial.printf("Node ready. scope=%c ID=%d channel=%d\n",
-                scopeChar(THIS_NODE_SCOPE), fanID, WIFI_CHANNEL);
+  Serial.printf("Node ready. scope=%c ID=%d channel=%d cpu=%uMHz\n",
+                scopeChar(THIS_NODE_SCOPE), fanID, WIFI_CHANNEL,
+                (unsigned)getCpuFrequencyMhz());
 #endif
   pinMode(SIG_LED_PIN, OUTPUT);
   digitalWrite(SIG_LED_PIN, LOW);
