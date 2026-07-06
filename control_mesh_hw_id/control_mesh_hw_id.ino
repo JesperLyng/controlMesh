@@ -16,11 +16,22 @@
  *
  * For Arctic P14 Pro PST and other 4-pin PWM fans (25 kHz signal).
  *
- *   Keys 1-5 : select a specific fan (subsequent commands apply to it)
- *   "0"      : select ALL fans (subsequent commands apply to every fan)
- *   + / -    : one speed step up/down on the current selection
+ *   Colors (scope selectors, tracked on every node):
+ *     BLUE   : fan scope — subsequent commands apply to fans (this binary)
+ *     YELLOW : LED-strip scope (not yet built — LEDs will be a separate binary)
+ *     RED    : reserved for a future device class
+ *     GREEN  : reserved for a future device class
+ *   Pressing a color also resets selection to "all in scope".
+ *
+ *   Keys 1-5 : select a specific instance within the active scope
+ *   "0"      : select ALL instances within the active scope
+ *   + / -    : one step up/down on the current selection
  *   POWER    : toggle the current selection on/off
  *   MUTE     : force the current selection off
+ *
+ * Commands other than scope/select are only acted on when the active scope
+ * matches THIS_NODE_SCOPE — so pressing YELLOW then MUTE is a no-op on fan
+ * nodes but will kill all LEDs once LED nodes exist.
  *
  * Requires: ESP32 Arduino core (2.x or 3.x) + "IRremote" library (v4.x).
  */
@@ -64,14 +75,33 @@ void blinkUpdate() {
 // ---------- IR codes (Samsung command byte, address 0x0E) ----------
 // Codes 0x06..0x09 (keys 6-9) are captured but unmapped — reserved for
 // future CMD_SELECT expansion or another device class on the same mesh.
-const uint8_t CMD_SELECT[5]  = {0x01, 0x02, 0x03, 0x04, 0x05};
-const uint8_t CMD_SELECT_ALL = 0x00;   // key "0"
-const uint8_t CMD_VOL_UP     = 0x14;
-const uint8_t CMD_VOL_DOWN   = 0x15;
-const uint8_t CMD_POWER      = 0x0C;   // toggle the current selection
-const uint8_t CMD_OFF        = 0x0D;   // MUTE: force the current selection off
+const uint8_t CMD_SELECT[5]   = {0x01, 0x02, 0x03, 0x04, 0x05};
+const uint8_t CMD_SELECT_ALL  = 0x00;  // key "0"
+const uint8_t CMD_VOL_UP      = 0x14;
+const uint8_t CMD_VOL_DOWN    = 0x15;
+const uint8_t CMD_POWER       = 0x0C;  // toggle the current selection
+const uint8_t CMD_OFF         = 0x0D;  // MUTE: force the current selection off
 
-// Sentinel: selectedFan == SELECT_ALL means "apply to every fan node".
+// Scope selectors (color keys). Every node tracks activeScope so the mesh
+// stays in sync, but only nodes whose THIS_NODE_SCOPE matches act on the
+// non-scope/non-select commands.
+const uint8_t CMD_SCOPE_RED    = 0xA0;
+const uint8_t CMD_SCOPE_GREEN  = 0xA1;
+const uint8_t CMD_SCOPE_LED    = 0xA2;  // YELLOW
+const uint8_t CMD_SCOPE_FAN    = 0xA3;  // BLUE
+
+enum Scope : uint8_t {
+  SCOPE_FAN   = 0,
+  SCOPE_LED   = 1,
+  SCOPE_RED   = 2,
+  SCOPE_GREEN = 3,
+};
+
+// This binary is the fan controller. LED / future-class nodes flash a
+// different binary with THIS_NODE_SCOPE set accordingly.
+const uint8_t THIS_NODE_SCOPE = SCOPE_FAN;
+
+// Sentinel: selectedFan == SELECT_ALL means "apply to every node in the active scope".
 const uint8_t SELECT_ALL = 0;
 
 // ---------- Speed steps (% duty) ----------
@@ -92,8 +122,9 @@ struct __attribute__((packed)) Packet { uint8_t magic; uint8_t cmd; };
 uint8_t BROADCAST[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 
 // ---------- State ----------
-uint8_t  fanID       = 1;       // read in setup()
-uint8_t  selectedFan = 1;
+uint8_t  fanID       = 1;                 // read in setup()
+uint8_t  activeScope = SCOPE_FAN;         // boot default — safe on a boat
+uint8_t  selectedFan = SELECT_ALL;        // 0 = all in scope; 1..5 = specific
 bool     fanOn       = false;
 int8_t   levelIndex  = 2;
 uint8_t  lastCmd     = 0xFF;
@@ -164,28 +195,66 @@ bool accept(uint8_t cmd) {
 }
 
 // ---------- Command logic ----------
-void applyCommand(uint8_t cmd) {
+// Return value is a short label for the Serial log — describes what the node
+// actually did (or why it did nothing), so `SERIAL_DEBUG` output makes each
+// command byte traceable end-to-end.
+//
+// Scope keys and select keys are processed unconditionally so every node
+// stays in sync with the remote's addressing state. Everything else is
+// gated behind (activeScope == THIS_NODE_SCOPE).
+const char* applyCommand(uint8_t cmd) {
+  // --- Scope selectors (color keys) — always processed. Reset selection. ---
+  if (cmd == CMD_SCOPE_FAN)   { activeScope = SCOPE_FAN;   selectedFan = SELECT_ALL; return "SCOPE fan"; }
+  if (cmd == CMD_SCOPE_LED)   { activeScope = SCOPE_LED;   selectedFan = SELECT_ALL; return "SCOPE led"; }
+  if (cmd == CMD_SCOPE_RED)   { activeScope = SCOPE_RED;   selectedFan = SELECT_ALL; return "SCOPE red"; }
+  if (cmd == CMD_SCOPE_GREEN) { activeScope = SCOPE_GREEN; selectedFan = SELECT_ALL; return "SCOPE grn"; }
+
+  // --- Selectors (numeric keys) — always processed, narrows within scope. ---
   for (uint8_t i = 0; i < 5; i++)
-    if (cmd == CMD_SELECT[i]) { selectedFan = i + 1; return; }
-  if (cmd == CMD_SELECT_ALL) { selectedFan = SELECT_ALL; return; }
+    if (cmd == CMD_SELECT[i]) {
+      selectedFan = i + 1;
+      static const char* labels[5] = {"SEL 1", "SEL 2", "SEL 3", "SEL 4", "SEL 5"};
+      return labels[i];
+    }
+  if (cmd == CMD_SELECT_ALL) { selectedFan = SELECT_ALL; return "SEL all"; }
+
+  // --- Everything below is scope-gated. ---
+  if (activeScope != THIS_NODE_SCOPE) return "scope skip";
 
   bool mine = (selectedFan == SELECT_ALL) || (selectedFan == fanID);
 
   if (cmd == CMD_VOL_UP) {
-    if (mine) { if (levelIndex < NUM_LEVELS - 1) levelIndex++; fanOn = true; applyOutput(); }
-    return;
+    if (!mine) return "SPD+ skip";
+    if (levelIndex < NUM_LEVELS - 1) levelIndex++;
+    fanOn = true; applyOutput();
+    return "SPD+";
   }
   if (cmd == CMD_VOL_DOWN) {
-    if (mine) { if (levelIndex > 0) levelIndex--; fanOn = true; applyOutput(); }
-    return;
+    if (!mine) return "SPD- skip";
+    if (levelIndex > 0) levelIndex--;
+    fanOn = true; applyOutput();
+    return "SPD-";
   }
   if (cmd == CMD_POWER) {
-    if (mine) { fanOn = !fanOn; applyOutput(); }
-    return;
+    if (!mine) return "PWR skip";
+    fanOn = !fanOn; applyOutput();
+    return fanOn ? "PWR on" : "PWR off";
   }
   if (cmd == CMD_OFF) {
-    if (mine) { fanOn = false; applyOutput(); }
-    return;
+    if (!mine) return "OFF skip";
+    fanOn = false; applyOutput();
+    return "OFF";
+  }
+  return "unmapped";
+}
+
+static char scopeChar(uint8_t s) {
+  switch (s) {
+    case SCOPE_FAN:   return 'F';
+    case SCOPE_LED:   return 'L';
+    case SCOPE_RED:   return 'R';
+    case SCOPE_GREEN: return 'G';
+    default:          return '?';
   }
 }
 
@@ -233,7 +302,8 @@ void setup() {
 #endif
   fanID = readFanID();
 #if SERIAL_DEBUG
-  Serial.printf("Node ready. ID=%d  channel=%d\n", fanID, WIFI_CHANNEL);
+  Serial.printf("Node ready. scope=%c ID=%d channel=%d\n",
+                scopeChar(THIS_NODE_SCOPE), fanID, WIFI_CHANNEL);
 #endif
   pinMode(SIG_LED_PIN, OUTPUT);
   digitalWrite(SIG_LED_PIN, LOW);
@@ -245,40 +315,64 @@ void setup() {
 }
 
 void loop() {
-  // IR in: initial frames only — execute + rebroadcast
+  // IR in: initial frames only — execute + rebroadcast.
+  // Every IR event we hear gets a Serial line, so it's obvious whether
+  // a keypress reached this node and what the node did with it.
   if (IrReceiver.decode()) {
     auto &d = IrReceiver.decodedIRData;
-    if (d.protocol != UNKNOWN && !(d.flags & IRDATA_FLAGS_IS_REPEAT)) {
+    if (d.protocol == UNKNOWN) {
+#if SERIAL_DEBUG
+      Serial.printf("IR  raw=0x%08X UNKNOWN protocol\n",
+                    (uint32_t)d.decodedRawData);
+#endif
+    } else if (d.flags & IRDATA_FLAGS_IS_REPEAT) {
+#if SERIAL_DEBUG
+      Serial.printf("IR  0x%02X REPEAT     (ignored, R2)\n", d.command);
+#endif
+    } else {
       uint8_t cmd = d.command;
       if (accept(cmd)) {
         signalBlink();
-        applyCommand(cmd);
+        const char* action = applyCommand(cmd);
         meshBroadcast(cmd);
 #if SERIAL_DEBUG
-        Serial.printf("IR  0x%02X  selected=%d on=%d step=%d\n",
-                      cmd, selectedFan, fanOn, levelIndex);
+        Serial.printf("IR  0x%02X %-10s scope=%c sel=%d on=%d step=%d\n",
+                      cmd, action, scopeChar(activeScope), selectedFan, fanOn, levelIndex);
+#endif
+      } else {
+#if SERIAL_DEBUG
+        Serial.printf("IR  0x%02X DEDUP      (within %u ms of last)\n",
+                      cmd, (unsigned)DEDUP_MS);
 #endif
       }
     }
     IrReceiver.resume();
   }
 
-  // ESP-NOW in: execute, but NEVER rebroadcast
+  // ESP-NOW in: execute, but NEVER rebroadcast. Dedup rejections here are
+  // expected — every other node's rebroadcast lands within R3's window.
   while (rxTail != rxHead) {
     uint8_t cmd = rxBuf[rxTail];
     rxTail = (rxTail + 1) & 7;
     if (accept(cmd)) {
       signalBlink();
-      applyCommand(cmd);
+      const char* action = applyCommand(cmd);
 #if SERIAL_DEBUG
-      Serial.printf("RF  0x%02X  selected=%d on=%d step=%d\n",
-                    cmd, selectedFan, fanOn, levelIndex);
+      Serial.printf("RF  0x%02X %-10s scope=%c sel=%d on=%d step=%d\n",
+                    cmd, action, scopeChar(activeScope), selectedFan, fanOn, levelIndex);
+#endif
+    } else {
+#if SERIAL_DEBUG
+      Serial.printf("RF  0x%02X DEDUP      (within %u ms of last)\n",
+                    cmd, (unsigned)DEDUP_MS);
 #endif
     }
   }
 
   blinkUpdate();
-  if (SEL_LED_PIN >= 0)
-    digitalWrite(SEL_LED_PIN,
-                 (selectedFan == SELECT_ALL || selectedFan == fanID) ? HIGH : LOW);
+  if (SEL_LED_PIN >= 0) {
+    bool addressed = (activeScope == THIS_NODE_SCOPE)
+                  && (selectedFan == SELECT_ALL || selectedFan == fanID);
+    digitalWrite(SEL_LED_PIN, addressed ? HIGH : LOW);
+  }
 }

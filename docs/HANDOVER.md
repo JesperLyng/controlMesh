@@ -57,14 +57,25 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 ## Kommandosæt (fjernbetjening → funktion)
 
 ```
-Tast 1–5 : vælg en specifik blæser (gælder for efterfølgende kommandoer)
-Tast 0   : vælg ALLE blæsere (gælder for efterfølgende kommandoer)
-+ / -    : ét hastighedstrin op/ned på det valgte (tænder hvis slukket)
-POWER    : tænd/sluk det valgte
-MUTE     : sluk det valgte uafhængigt af nuværende status
+Scope (farvetaster — sætter enhedstype OG nulstiller valg til "alle i scope"):
+  BLÅ   : blæsere (SCOPE_FAN — denne firmware)
+  GUL   : LED-strips (SCOPE_LED — planlagt, kræver separat binary)
+  RØD   : reserveret til fremtidig enhedstype
+  GRØN  : reserveret til fremtidig enhedstype
+
+Valg (inden for aktiv scope):
+  Tast 1-5 : vælg en specifik instans
+  Tast 0   : vælg ALLE instanser
+
+Handling (kun aktiv på noder hvis THIS_NODE_SCOPE matcher activeScope):
+  + / -    : ét trin op/ned på det valgte (tænder hvis slukket)
+  POWER    : tænd/sluk det valgte
+  MUTE     : sluk det valgte uafhængigt af nuværende status
 ```
 
-Valg-tilstand er persistent: har man valgt "alle" med tast 0, gælder efterfølgende +/-/POWER/MUTE alle blæsere, indtil man vælger en specifik igen med 1-5. `SEL_LED` lyser på en node når `selectedFan == fanID` eller når "vælg alle" er aktiv.
+Scope er "sticky": tryk fx GUL → MUTE slukker alle LED-strips, uden mellemliggende "0"-tryk, fordi et farvetryk nulstiller `selectedFan` til `SELECT_ALL`. Vil man narrow'e ned bagefter, trykker man et taltryk 1-5. Valg-tilstand er persistent indtil næste farve- eller taltryk.
+
+`SEL_LED` på en blæser-node lyser når `activeScope == SCOPE_FAN` OG (`selectedFan == fanID` eller "alle") — altså kun når noden faktisk er adresserbar lige nu.
 
 Hastighedstrin: `{40, 55, 70, 85, 100}` % duty — 5 trin, indeks 2 (70%) er startværdi efter boot. Disse tal er ikke verificeret mod faktiske blæsere endnu; 40% blev valgt som et gæt på et fornuftigt stall-gulv og bør justeres efter test.
 
@@ -90,10 +101,10 @@ Hentet fra URC1210 med `ir_diagnostic.ino`. De koder der ikke bruges lige nu er 
 | `0x13` | CH-   | *reserveret* |
 | `0x14` | VOL+  | `CMD_VOL_UP` — ét hastighedstrin op |
 | `0x15` | VOL-  | `CMD_VOL_DOWN` — ét hastighedstrin ned |
-| `0xA0` | RED   | *reserveret — fremtidig enhedstype (fx pumper)* |
-| `0xA1` | GREEN | *reserveret — fremtidig enhedstype* |
-| `0xA2` | YELLOW| *reserveret — planlagt: LED-strips (se afsnit længere nede)* |
-| `0xA3` | BLUE  | *reserveret — planlagt: blæsere som eksplicit scope-vælger* |
+| `0xA0` | RED   | `CMD_SCOPE_RED` — scope-vælger, reserveret enhedstype |
+| `0xA1` | GREEN | `CMD_SCOPE_GREEN` — scope-vælger, reserveret enhedstype |
+| `0xA2` | YELLOW| `CMD_SCOPE_LED` — scope-vælger, LED-strips (kræver fremtidig LED-firmware) |
+| `0xA3` | BLUE  | `CMD_SCOPE_FAN` — scope-vælger, blæsere (denne firmware) |
 
 ## Kendte risici / ting at validere før eller under videre udvikling
 
@@ -109,17 +120,23 @@ Hentet fra URC1210 med `ir_diagnostic.ino`. De koder der ikke bruges lige nu er 
 
 6. **`ledc`-API har forskellig signatur mellem ESP32 Arduino-core 2.x og 3.x.** Firmwaren håndterer dette med `#if ESP_ARDUINO_VERSION_MAJOR >= 3` — vigtigt at bevare ved fremtidige ændringer i PWM-relateret kode.
 
-## Fremtidig udvidelse (besluttet udskudt, men arkitektur forberedt for den)
+## Fremtidig udvidelse (scope-infrastruktur bygget — LED-node udestår)
 
-Brugeren ønsker senere at udvide samme mesh til at styre LED-strips i båden med samme fjernbetjening. Plan, ikke implementeret endnu:
+Brugeren har bekræftet at farvetasterne skal fungere som **scope-præfiks**, og at det næste tryk efter en farve skal gælde alle enheder i den scope indtil et taltryk indsnævrer. Dette er implementeret i den nuværende firmware:
 
-- Brug fjernbetjeningens 4 farvetaster (rød/gul/grøn/blå) som **enhedstype-vælger**, adskilt fra 1-5/+/-/power, som forbliver "lokale" kommandoer inden for den valgte enhedstype. Foreslået: blå = blæsere, gul = LED-strips, rød/grøn reserveret til fremtidige enhedstyper (fx pumper, cockpit-lys).
-- Dette løser navnerum-kollision (uden farvetast-præfiks ville "tryk 1" tvetydigt ramme både en blæser-node og en fremtidig LED-node).
-- Mesh-laget (IR-modtagelse, ESP-NOW-distribution, R1-R3-reglerne) er allerede enhedsagnostisk og kan genbruges uændret. Kun `applyCommand()`/`applyOutput()` og et nyt `activeDeviceType`-felt (sat af farvetasterne, kompileret ind pr. node-type ligesom `FAN_ID` i dag) skal tilføjes.
-- LED-strips vil sandsynligvis kræve anden output-elektronik end blæsernes direkte PWM-ben (enten MOSFET-PWM til simple 12V-strips, eller WS2812/NeoPixel-protokol til adresserbare strips) — dette er ikke designet endnu.
-- Åbent spørgsmål, ikke besluttet: skal `activeDeviceType` huskes ved genstart, eller altid boote til en default (sandsynligvis blæser-mode er det rigtige fail-safe-valg, men ikke bekræftet med brugeren).
+- Farvetaster tracked på alle noder: `activeScope` opdateres på både IR- og mesh-siden, så meshet forbliver synkron. Fordeling: blå = blæsere (`SCOPE_FAN`), gul = LED-strips (`SCOPE_LED`), rød/grøn = reserveret til fremtidige enhedstyper.
+- Kommandoer der ikke er scope- eller select-taster kun aktive når `activeScope == THIS_NODE_SCOPE`. Blæser-firmwaren har `THIS_NODE_SCOPE = SCOPE_FAN` som compile-time konstant; en fremtidig LED-firmware sætter `SCOPE_LED`.
+- Farvetryk nulstiller `selectedFan` til `SELECT_ALL`, så "gul → mute" slukker alle LED-strips uden et mellemliggende "0"-tryk.
+- `SEL_LED` lyser når noden er adresserbar nu: `activeScope == THIS_NODE_SCOPE` og `selectedFan` matcher (eller er "alle").
 
-**Eksplicit brugerbeslutning:** dette er bevidst lagt på is — byg det ikke proaktivt, før brugeren beder om det igen.
+Boot-default er `SCOPE_FAN` (blæsermode). Det er stadig ubekræftet om `activeScope` skal huskes på tværs af genstart — nuværende valg er nej, for at genstart altid lander i den sikreste tilstand på en båd.
+
+Hvad der stadig udestår før LED-strips kan bruges:
+
+- En separat firmware-binary for LED-noden med `THIS_NODE_SCOPE = SCOPE_LED` og LED-specifik output-stage. Driver-valg (WS2812/NeoPixel-protokol vs simpel MOSFET-PWM til analoge 12V-strips) og hardware-pinout er ikke besluttet.
+- LED-node hardware (buck-konverter dimensioneret til strips, evt. logic-level shifter til 5V-data hvis WS2812).
+
+**Byg ikke LED-binary'en proaktivt** — vent på at brugeren beder om det. Scope-infrastrukturen er dog nu klar, så det bliver et lokalt tilføj, ikke en større ombygning.
 
 ## Status og næste skridt
 

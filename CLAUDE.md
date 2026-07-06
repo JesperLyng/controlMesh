@@ -38,7 +38,8 @@ Other deliberate choices that look like omissions but are not:
 - **No NEC `address` filtering** — only the `command` byte is matched. Interference risk judged acceptable.
 - **Partial boot-window failsafe.** Fans may briefly run full speed (<1 s) during boot before LEDC initialises. The user has accepted this and explicitly rejected a MOSFET hard-cutoff. The 10 kΩ pullup on `PWM_PIN` to 3.3V plus `digitalWrite(PWM_PIN, LOW)` in `pwmBegin()` is the agreed mitigation.
 - **Samsung-only decode** (`#define DECODE_SAMSUNG`). The final remote emits Samsung32 with the chosen device code; only that protocol is compiled in. If a future remote emits a different protocol, either change the remote's device code or add another `#define DECODE_*` alongside.
-- **`selectedFan == 0` is the "select all" sentinel** (key `0` on the remote). `applyCommand`'s `mine` predicate is `selectedFan == SELECT_ALL || selectedFan == fanID` — keep both branches when editing.
+- **`selectedFan == 0` is the "select all" sentinel** (key `0` on the remote, and the reset value on every color-key press). `applyCommand`'s `mine` predicate is `selectedFan == SELECT_ALL || selectedFan == fanID` — keep both branches when editing.
+- **Scope prefix (color keys).** `activeScope` is tracked on every node. Scope keys AND number keys are processed unconditionally so the mesh stays in sync; everything else is gated by `activeScope == THIS_NODE_SCOPE`. `THIS_NODE_SCOPE` is a compile-time constant per binary — this repo's firmware is `SCOPE_FAN`; a future LED binary will be `SCOPE_LED`. Pressing a color also resets `selectedFan` to `SELECT_ALL`, so "YELLOW then MUTE" is "all LEDs off" without an intermediate `0` press.
 - **IR command bytes are captured from the real remote** (Samsung, address `0x0E`) — see `docs/HANDOVER.md` for the full reference table, including keys 6-9 which are captured but unmapped.
 
 ## Hardware notes that affect code
@@ -49,4 +50,7 @@ Other deliberate choices that look like omissions but are not:
 
 ## Deferred work — do not build proactively
 
-HANDOVER.md describes a future LED-strip extension using the remote's color keys as device-type selectors. The user has explicitly asked that this stay on ice until they bring it up again. Do not start sketching it in code or comments uninvited.
+The scope-prefix infrastructure (color keys → `activeScope`) is now in the firmware, so a future LED-strip node can share the same mesh. Still deferred until the user asks:
+
+- The LED node's own binary (`THIS_NODE_SCOPE = SCOPE_LED`) with the LED output stage — driver choice (WS2812/NeoPixel vs plain MOSFET-PWM strips) and hardware pinout are not decided.
+- Persistence of `activeScope` across reboot vs always booting to `SCOPE_FAN` — HANDOVER.md flags this as an open question. Current firmware boots to `SCOPE_FAN` as a safe default.

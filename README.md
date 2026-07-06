@@ -58,20 +58,32 @@ converter + ID-jumper recipe and differ only in the output stage.
 All nodes on the mesh must use the same Wi-Fi channel (`WIFI_CHANNEL`,
 default `1`).
 
-## Remote keys (fan node)
+## Remote keys
 
 ```
-Keys 1–5 : select a specific fan (subsequent commands apply to it)
-0        : select ALL fans (subsequent commands apply to every fan)
-+        : one speed step up on the current selection (turns it on if off)
--        : one speed step down on the current selection
-POWER    : toggle the current selection on/off
-MUTE     : force the current selection off
+Scope (color keys — every node tracks scope; also resets selection to "all"):
+  BLUE   : fan scope   (this binary)
+  YELLOW : LED scope   (planned — a future LED binary will respond)
+  RED    : reserved for a future device class
+  GREEN  : reserved for a future device class
+
+Selection (within the active scope):
+  Keys 1–5 : select a specific instance
+  0        : select ALL instances
+
+Action (only fires on nodes whose class matches the active scope):
+  + / -    : one step up/down on the current selection
+  POWER    : toggle the current selection on/off
+  MUTE     : force the current selection off
 ```
 
-Five speed steps: `40, 55, 70, 85, 100` % duty (start value: 70 %).
+The scope prefix is sticky — pressing e.g. YELLOW followed by MUTE is
+"turn off all LEDs" without an explicit `0`, because pressing a color
+also resets the selection to "all in scope".
+
+Fan node: five speed steps `40, 55, 70, 85, 100` % duty (start 70 %).
 Keys `6`–`9` are captured but unmapped — reserved for future
-`CMD_SELECT` expansion or another device class on the same mesh.
+`CMD_SELECT` expansion.
 
 ## Mesh rules
 

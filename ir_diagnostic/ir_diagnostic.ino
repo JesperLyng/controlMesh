@@ -21,6 +21,7 @@
  * Requires: "IRremote" library v4.x.
  */
 
+#define DECODE_SAMSUNG
 #include <IRremote.hpp>
 
 const uint8_t IR_PIN = 4;   // same pin as in the mesh firmware
