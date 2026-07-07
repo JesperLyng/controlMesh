@@ -134,12 +134,14 @@ Brugeren har bekræftet at farvetasterne skal fungere som **scope-præfiks**, og
 
 Boot-default er `SCOPE_FAN` (blæsermode). Det er stadig ubekræftet om `activeScope` skal huskes på tværs af genstart — nuværende valg er nej, for at genstart altid lander i den sikreste tilstand på en båd.
 
+Firmwaren er nu opdelt i common-kode (`control_mesh_hw_id.ino`) og en device-specifik output-stage (`device_fan.cpp`) med et lille interface (`device.h`) — `deviceBegin()`, `deviceApply(on, levelIndex)`, og `THIS_NODE_SCOPE`. En LED-node arves ved at kopiere `.ino` + `device.h` til en ny sketch-mappe (`control_mesh_led/`) og skrive et `device_led.cpp` der implementerer de tre symboler. Common-koden røres ikke.
+
 Hvad der stadig udestår før LED-strips kan bruges:
 
-- En separat firmware-binary for LED-noden med `THIS_NODE_SCOPE = SCOPE_LED` og LED-specifik output-stage. Driver-valg (WS2812/NeoPixel-protokol vs simpel MOSFET-PWM til analoge 12V-strips) og hardware-pinout er ikke besluttet.
+- Et nyt sketch-directory `control_mesh_led/` med kopi af `.ino` og `device.h` plus et `device_led.cpp`. Driver-valg (WS2812/NeoPixel-protokol vs simpel MOSFET-PWM til analoge 12V-strips) og hardware-pinout er ikke besluttet.
 - LED-node hardware (buck-konverter dimensioneret til strips, evt. logic-level shifter til 5V-data hvis WS2812).
 
-**Byg ikke LED-binary'en proaktivt** — vent på at brugeren beder om det. Scope-infrastrukturen er dog nu klar, så det bliver et lokalt tilføj, ikke en større ombygning.
+**Byg ikke LED-binary'en proaktivt** — vent på at brugeren beder om det. Både scope-infrastruktur og device-lags-abstraktion er dog klar, så det bliver reelt bare implementering af `device_led.cpp`.
 
 ## Status og næste skridt
 

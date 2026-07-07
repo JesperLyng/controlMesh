@@ -25,7 +25,7 @@ selection is intended to use the remote's color keys as a prefix so the 1–5 /
 
 | Path | Purpose |
 | --- | --- |
-| `control_mesh_hw_id/` | Active firmware for the fan node. Same binary flashes to all five nodes. |
+| `control_mesh_hw_id/` | Active firmware for the fan node. Common code (`.ino`, `mesh`, `ir_codes`, `signal_led`, `id_pins`) is device-agnostic; `device_fan.cpp` is the fan-specific output stage. `device.h` declares the interface a new class must implement to share the mesh. Same binary flashes to all five nodes. |
 | `ir_diagnostic/` | Standalone sketch that decodes any IR protocol IRremote supports — use it to capture the `command` bytes from your chosen remote before plugging them into a node's firmware. |
 | `docs/HANDOVER.md` | Full design rationale, hardware decisions, accepted trade-offs, and the hardware-test roll-out plan (in Danish). Also covers the planned multi-device extension. |
 | `CLAUDE.md` | Guidance for the Claude Code AI assistant when working in this repo. |

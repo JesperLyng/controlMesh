@@ -12,10 +12,17 @@ DIY controller for 5× 12V 4-pin PWM fans (Arctic P14 Pro PST) on a sailboat, dr
 
 ## Files
 
-- `control_mesh_hw_id/control_mesh_hw_id.ino` — the active firmware. All five nodes flash this identical binary.
-- `ir_diagnostic/ir_diagnostic.ino` — standalone diagnostic sketch to identify the protocol/codes from an unknown IR remote before plugging them into the mesh firmware's `CMD_*` constants.
+- `control_mesh_hw_id/` — the active fan-node sketch. Arduino compiles every file in the directory into one binary:
+  - `control_mesh_hw_id.ino` — sketch entry point, common state, `applyCommand` dispatch, `setup()` / `loop()`.
+  - `device.h` — device-class interface (`deviceBegin`, `deviceApply`, `THIS_NODE_SCOPE`), the `Scope` enum, `NUM_LEVELS`, and the project-wide `SERIAL_DEBUG` define.
+  - `device_fan.cpp` — fan output stage. Owns `PWM_PIN`, `LEVELS[]`, LEDC 25 kHz setup; defines `THIS_NODE_SCOPE = SCOPE_FAN`.
+  - `ir_codes.h` — `CMD_*` Samsung command bytes (selectors, actions, scope colors).
+  - `mesh.h` / `mesh.cpp` — ESP-NOW transport (`meshBegin`, `meshBroadcast`, `meshPoll`) + R3 dedup (`dedupAccept`, `DEDUP_MS`). Owns `WIFI_CHANNEL`.
+  - `signal_led.h` / `signal_led.cpp` — non-blocking signal LED (`signalLedBegin`, `signalBlink`, `blinkUpdate`).
+  - `id_pins.h` / `id_pins.cpp` — jumper-based node ID (`readFanID`) with the wiring truth table in the header.
+- `ir_diagnostic/ir_diagnostic.ino` — standalone diagnostic sketch to identify the protocol/codes from an unknown IR remote before plugging them into `ir_codes.h`.
 
-Each is a standalone Arduino sketch (the `.ino` filename matches its parent directory, as Arduino requires). They are not a multi-file build — each is flashed on its own.
+Adding a new device class (e.g. LEDs) means creating a new sketch directory that copies the common files and drops in a new `device_<class>.cpp` — no changes to the common code. See the header block in `device.h` for the contract.
 
 ## Build / flash
 
