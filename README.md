@@ -37,7 +37,6 @@ selection is intended to use the remote's color keys as a prefix so the 1–5 /
 - Arctic P14 Pro PST 12V 4-pin PWM fan
 - IR receiver (VS1838B or TSOP38238, 38 kHz) with local decoupling
 - MP1584 buck converter (12V → 3.3V/5V)
-- 10 kΩ pullup from `PWM_PIN` to 3.3V (boot-state failsafe)
 - Signal LED + 330 Ω series resistor
 - 3× jumpers on the ID pins
 - 12V supply with inline 1–2A fuse
@@ -75,9 +74,11 @@ Action (only fires on nodes whose class matches the active scope):
   + / -    : one step up/down on the current selection
   POWER    : toggle the current selection on/off
   MUTE     : toggle — first press bookmarks state then forces off with
-             level reset to 0; second press restores the bookmark.
-             Any VOL+/-, POWER, or another OFF-cycle in between clears
-             the bookmark.
+             level reset to 0; second press restores the bookmark. At
+             boot the bookmark is pre-populated with "fan on at default
+             level", so the first MUTE after power-on acts as a one-
+             button start. Any VOL+/-, POWER in between clears the
+             bookmark.
 ```
 
 The scope prefix is sticky — pressing e.g. YELLOW followed by MUTE is

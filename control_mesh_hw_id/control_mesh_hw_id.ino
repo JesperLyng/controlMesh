@@ -30,11 +30,12 @@
  *   "0"      : select ALL instances within the active scope
  *   + / -    : one step up/down on the current selection
  *   POWER    : toggle the current selection on/off
- *   MUTE     : first press bookmarks the current state, then forces the
- *              selection off with level reset to 0.
- *              Second MUTE press restores the bookmarked state (unmute).
- *              Any VOL+/-, POWER (or another OFF-cycle) between presses
- *              clears the bookmark.
+ *   MUTE     : toggle. First press bookmarks the current state and forces
+ *              the selection off with level reset to 0; second press
+ *              restores the bookmark (unmute). At boot the bookmark is
+ *              pre-populated with "fan on at default level" so the first
+ *              MUTE press after power-on acts as a one-button start. Any
+ *              VOL+/-, POWER between presses clears the bookmark.
  *
  * Commands other than scope/select are only acted on when the active scope
  * matches THIS_NODE_SCOPE — so pressing YELLOW then MUTE is a no-op on fan
@@ -76,14 +77,19 @@ uint8_t  fanID       = 1;                 // read in setup()
 uint8_t  activeScope = SCOPE_FAN;         // boot default — safe on a boat
 uint8_t  selectedFan = SELECT_ALL;        // 0 = all in scope; 1..5 = specific
 bool     fanOn       = false;
-int8_t   levelIndex  = 5;                 // 0..10 scale; midpoint at boot (63% duty)
+int8_t   levelIndex  = 2;                 // 0..10 scale at boot
 uint32_t lastVolMs   = 0;                 // last accepted VOL step (R2 exception)
 
 // MUTE toggle state — a MUTE press bookmarks (fanOn, levelIndex) so a second
 // MUTE press restores them. Any VOL+/-, POWER (or another OFF-cycle) clears
 // the bookmark, since the user has actively changed the state.
-bool     muted       = false;
-bool     savedFanOn  = false;
+//
+// Boot state: muted=true with the bookmark pre-populated as "fan on at
+// default level", so the first MUTE press after power-on unmutes into the
+// running state — a one-button "start". Any other command (VOL+, POWER)
+// still works normally at boot and clears the bookmark as usual.
+bool     muted       = true;
+bool     savedFanOn  = true;
 int8_t   savedLevel  = 5;
 
 // ---------- Output ----------

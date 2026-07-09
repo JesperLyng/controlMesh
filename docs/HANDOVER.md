@@ -27,7 +27,7 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 
 **CPU throttlet til 80 MHz for lavere idle-forbrug.** Firmwaren kalder `setCpuFrequencyMhz(80)` som første handling i `setup()`. 80 MHz er ESP32-klassikkens laveste indstilling der stadig holder WiFi-radioen aktiv (nødvendig for ESP-NOW) — 40 MHz og derunder slukker radioen. APB-clocken forbliver 80 MHz, så LEDC PWM (25 kHz) og seriel kører uændret; IRremote skalerer sine timere automatisk. Idle-strøm halveres cirka i forhold til 240 MHz-standarden — relevant på en båd med begrænset batteri. Ingen af arbejdsopgaverne (IR-decode, ESP-NOW, PWM-output) er CPU-bundne, så der er intet at vinde ved at hæve igen. Sænkes yderligere kræver alternativ mesh-transport.
 
-**Boot-failsafe er bevidst accepteret som ufuldstændig.** 4-pin PWM-spec definerer at floating/GND-signal = fuld hastighed (fail-safe for PC-køling). Det er uønsket på en båd ved boot. Løsningen er en 10 kΩ pullup til 3,3V på PWM-pinen + at firmwaren sætter pinen lav som digital output, før LEDC initialiserer (se `pwmBegin()`). Brugeren har eksplicit accepteret, at blæseren kan køre fuld hastighed i det korte boot-vindue (under et sekund), og afvist en MOSFET-baseret hård afbryder som overkill "for nu". **Hvis dette skal løses fuldt ud senere, er det en bevidst efterladt opgave, ikke en fejl.**
+**Boot-failsafe er bevidst accepteret som ufuldstændig.** 4-pin PWM-spec definerer at floating/GND-signal = fuld hastighed (fail-safe for PC-køling). Det er uønsket på en båd ved boot. PWM-pinen er GPIO 13 (plain GPIO, ingen strap-pin funktion) og er floating indtil `deviceBegin()` kalder `ledcAttach()` og skriver 0-duty. Under det korte vindue mellem power-on og LEDC-init læser blæseren pinen som 100% duty og kører fuld hastighed. Ingen ekstern 10 kΩ-modstand nødvendig. Brugeren har eksplicit accepteret dette korte boot-vindue (under et sekund) og afvist en MOSFET-baseret hård afbryder som overkill "for nu". **Hvis dette skal løses fuldt ud senere, er det en bevidst efterladt opgave, ikke en fejl.**
 
 ## Hardware
 
@@ -36,7 +36,6 @@ Disse valg er truffet efter at have overvejet alternativer. Bevar dem, medmindre
 - Arctic P14 Pro PST 12V 4-pin PWM-blæser — 12V/GND direkte til forsyning, kun signalben (pin 4) til ESP32
 - IR-modtager: VS1838B eller TSOP38238 (38 kHz), med 100 Ω serie på Vcc + 100 µF/10V + 100 nF afkobling lokalt ved modtageren
 - MP1584 buck-konverter 12V→3,3V/5V
-- 10 kΩ pullup-modstand fra PWM-pin til 3,3V
 - LED + 330 Ω serie-modstand på SIG_LED_PIN (blinker ved gyldigt modtaget signal — bruges til feltdebugging af IR-dækning)
 - 3× jumpere til ID-pins (GPIO 32/33/25 — alle general-purpose, virker på både plain ESP32 og WROVER/PSRAM-varianter)
 - 12V hanstik (cigarettænder-type), inline-sikring 1-2A
@@ -74,8 +73,10 @@ Handling (kun aktiv på noder hvis THIS_NODE_SCOPE matcher activeScope):
   POWER    : tænd/sluk det valgte
   MUTE     : toggle — første tryk gemmer nuværende tilstand og tvinger
              slukket + niveau 0; andet tryk gendanner den gemte tilstand.
-             VOL+/-, POWER eller endnu et OFF-cycle imellem nulstiller
-             det gemte "bookmark".
+             Ved boot er bookmark pre-populeret med "blæser tændt på
+             default niveau", så første MUTE efter power-on virker som
+             en ét-tryks-start. VOL+/-, POWER imellem nulstiller
+             bookmark'et.
 ```
 
 Scope er "sticky": tryk fx GUL → MUTE slukker alle LED-strips, uden mellemliggende "0"-tryk, fordi et farvetryk nulstiller `selectedFan` til `SELECT_ALL`. Vil man narrow'e ned bagefter, trykker man et taltryk 1-5. Valg-tilstand er persistent indtil næste farve- eller taltryk.
