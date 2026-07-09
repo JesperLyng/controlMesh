@@ -30,12 +30,15 @@
  *   "0"      : select ALL instances within the active scope
  *   + / -    : one step up/down on the current selection
  *   POWER    : toggle the current selection on/off
- *   MUTE     : toggle. First press bookmarks the current state and forces
- *              the selection off with level reset to 0; second press
- *              restores the bookmark (unmute). At boot the bookmark is
- *              pre-populated with "fan on at default level" so the first
- *              MUTE press after power-on acts as a one-button start. Any
- *              VOL+/-, POWER between presses clears the bookmark.
+ *   MUTE     : toggle. First press bookmarks the current state and starts
+ *              a mute-fade: fan drops to level 0 (25% duty) to brake the
+ *              motor, then cuts to 0% after MUTE_FADE_MS. Second press
+ *              restores the bookmark (unmute) — if pressed during the
+ *              fade, the fade is aborted mid-brake. VOL+/-/POWER on this
+ *              fan also abort a pending fade and clear the bookmark. At
+ *              boot the bookmark is pre-populated with "fan on at default
+ *              level" so the first MUTE press after power-on acts as a
+ *              one-button start.
  *
  * Commands other than scope/select are only acted on when the active scope
  * matches THIS_NODE_SCOPE — so pressing YELLOW then MUTE is a no-op on fan
@@ -69,6 +72,11 @@ const uint32_t CPU_FREQ_MHZ = 80;
 // R2 exception: VOL+/- accept repeat frames while held, capped at ~3 steps/sec.
 const uint16_t VOL_REPEAT_MS = 333;
 
+// MUTE fade: run the fan at level 0 (25% duty) for this long before cutting
+// to full 0%. The brief low-duty phase brakes the motor actively so the fan
+// spins down faster than it would just coasting from high RPM.
+const uint16_t MUTE_FADE_MS  = 3000;
+
 // Sentinel: selectedFan == SELECT_ALL means "apply to every node in the active scope".
 const uint8_t SELECT_ALL = 0;
 
@@ -91,6 +99,11 @@ uint32_t lastVolMs   = 0;                 // last accepted VOL step (R2 exceptio
 bool     muted       = true;
 bool     savedFanOn  = true;
 int8_t   savedLevel  = 5;
+
+// Non-blocking mute-fade completion. First MUTE press runs the fan at level 0
+// for MUTE_FADE_MS to brake it actively, then loop() cuts to 0% duty. Value 0
+// means "no pending completion". Any VOL+/- or POWER on this fan aborts it.
+uint32_t muteFinishAt = 0;
 
 // ---------- Output ----------
 // Thin wrapper so the command-logic call sites don't need to know about
@@ -129,6 +142,7 @@ const char* applyCommand(uint8_t cmd) {
   if (cmd == CMD_VOL_UP) {
     if (!mine) return "SPD+ skip";
     muted = false;               // active change clears the MUTE bookmark
+    muteFinishAt = 0;            // abort any pending MUTE fade
     if (levelIndex < NUM_LEVELS - 1) levelIndex++;
     fanOn = true; applyOutput();
     return "SPD+";
@@ -136,6 +150,7 @@ const char* applyCommand(uint8_t cmd) {
   if (cmd == CMD_VOL_DOWN) {
     if (!mine) return "SPD- skip";
     muted = false;
+    muteFinishAt = 0;
     if (levelIndex > 0) levelIndex--;
     fanOn = true; applyOutput();
     return "SPD-";
@@ -143,27 +158,33 @@ const char* applyCommand(uint8_t cmd) {
   if (cmd == CMD_POWER) {
     if (!mine) return "PWR skip";
     muted = false;
+    muteFinishAt = 0;
     fanOn = !fanOn; applyOutput();
     return fanOn ? "PWR on" : "PWR off";
   }
   if (cmd == CMD_OFF) {
     if (!mine) return "OFF skip";
     if (muted) {
-      // Second MUTE press: restore whatever was saved.
+      // Second MUTE press: restore whatever was saved (also aborts a
+      // still-pending fade if the user double-taps within MUTE_FADE_MS).
       fanOn      = savedFanOn;
       levelIndex = savedLevel;
       muted      = false;
+      muteFinishAt = 0;
       applyOutput();
       return "UNMUTE";
     }
-    // First MUTE press: bookmark, then force off + level 0.
+    // First MUTE press: bookmark, ramp down to lowest level (25% duty) to
+    // brake the fan, and schedule the final cut to 0% in MUTE_FADE_MS —
+    // loop() finishes the mute so we don't block IR/mesh here.
     savedFanOn = fanOn;
     savedLevel = levelIndex;
-    fanOn      = false;
+    fanOn      = true;
     levelIndex = 0;
     muted      = true;
+    muteFinishAt = millis() + MUTE_FADE_MS;
     applyOutput();
-    return "MUTE";
+    return "MUTE lo";
   }
   return "unmapped";
 }
@@ -279,6 +300,17 @@ void loop() {
                     cmd, (unsigned)DEDUP_MS);
 #endif
     }
+  }
+
+  // Complete a scheduled MUTE fade — see CMD_OFF's first-press branch.
+  if (muteFinishAt != 0 && millis() >= muteFinishAt) {
+    fanOn = false;
+    applyOutput();
+    muteFinishAt = 0;
+#if SERIAL_DEBUG
+    Serial.printf("--  MUTE cut    scope=%c sel=%d on=%d step=%d\n",
+                  scopeChar(activeScope), selectedFan, fanOn, levelIndex);
+#endif
   }
 
   blinkUpdate();

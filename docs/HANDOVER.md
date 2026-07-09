@@ -71,12 +71,14 @@ Valg (inden for aktiv scope):
 Handling (kun aktiv på noder hvis THIS_NODE_SCOPE matcher activeScope):
   + / -    : ét trin op/ned på det valgte (tænder hvis slukket)
   POWER    : tænd/sluk det valgte
-  MUTE     : toggle — første tryk gemmer nuværende tilstand og tvinger
-             slukket + niveau 0; andet tryk gendanner den gemte tilstand.
-             Ved boot er bookmark pre-populeret med "blæser tændt på
-             default niveau", så første MUTE efter power-on virker som
-             en ét-tryks-start. VOL+/-, POWER imellem nulstiller
-             bookmark'et.
+  MUTE     : toggle — første tryk gemmer nuværende tilstand og starter
+             en mute-fade (blæseren kører på niveau 0 i ~3 sek. for at
+             bremse motoren aktivt, hvorefter den skæres helt til 0%);
+             andet tryk gendanner den gemte tilstand og afbryder fade'en
+             hvis den stadig er i gang. VOL+/- eller POWER på samme
+             blæser afbryder også en igangværende fade. Ved boot er
+             bookmark pre-populeret med "blæser tændt på default niveau",
+             så første MUTE efter power-on virker som en ét-tryks-start.
 ```
 
 Scope er "sticky": tryk fx GUL → MUTE slukker alle LED-strips, uden mellemliggende "0"-tryk, fordi et farvetryk nulstiller `selectedFan` til `SELECT_ALL`. Vil man narrow'e ned bagefter, trykker man et taltryk 1-5. Valg-tilstand er persistent indtil næste farve- eller taltryk.

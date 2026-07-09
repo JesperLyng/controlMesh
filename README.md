@@ -73,12 +73,13 @@ Selection (within the active scope):
 Action (only fires on nodes whose class matches the active scope):
   + / -    : one step up/down on the current selection
   POWER    : toggle the current selection on/off
-  MUTE     : toggle — first press bookmarks state then forces off with
-             level reset to 0; second press restores the bookmark. At
-             boot the bookmark is pre-populated with "fan on at default
-             level", so the first MUTE after power-on acts as a one-
-             button start. Any VOL+/-, POWER in between clears the
-             bookmark.
+  MUTE     : toggle — first press bookmarks state and starts a mute-
+             fade (fan runs at level 0 for ~3 s to brake the motor, then
+             cuts to 0 %); second press restores the bookmark, aborting
+             the fade if it's still in progress. VOL+/- or POWER on the
+             same fan also abort a pending fade. At boot the bookmark
+             is pre-populated with "fan on at default level", so the
+             first MUTE after power-on acts as a one-button start.
 ```
 
 The scope prefix is sticky — pressing e.g. YELLOW followed by MUTE is
