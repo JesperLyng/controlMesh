@@ -57,7 +57,7 @@
 #include "id_pins.h"
 
 // ---------- Pins that only setup()/loop() touch directly ----------
-const uint8_t IR_PIN      = 4;
+const uint8_t IR_PIN      = 13;
 const int8_t  SEL_LED_PIN = -1;  // lit when this node is addressable, or -1 to disable
 
 // ---------- CPU frequency ----------

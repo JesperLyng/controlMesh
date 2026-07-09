@@ -10,15 +10,15 @@
 const uint8_t THIS_NODE_SCOPE = SCOPE_FAN;
 
 // ---------- Fan PWM output ----------
-// PWM_PIN is GPIO 13 — a plain general-purpose GPIO with no boot-strap or
-// shared-peripheral duties, chosen to match the working reference (Ableton
-// fan controller) on this same Arctic P14 Pro PST hardware.
+// PWM_PIN is GPIO 4 — a plain general-purpose GPIO with no boot-strap or
+// shared-peripheral duties. Any LEDC-capable GPIO works; this one is chosen
+// to fit the physical layout of the node (IR receiver is on GPIO 13).
 // PWM_FREQ is 25 kHz per the Intel 4-pin PWM fan spec — do not change.
 // PWM_RES = 10 (0..1023 range) also matches the reference; 8-bit at 25 kHz
 // works in theory but is less battle-tested on Arduino ESP32 core 3.x.
 // PWM_CH must not collide with any other LEDC channel in this binary; we
 // only use one, and IRremote v4.x's receiver doesn't touch LEDC.
-static const uint8_t  PWM_PIN  = 13;
+static const uint8_t  PWM_PIN  = 4;
 static const uint32_t PWM_FREQ = 25000;
 static const uint8_t  PWM_RES  = 8;
 static const uint8_t  PWM_CH   = 0;

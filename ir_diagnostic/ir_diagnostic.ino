@@ -24,7 +24,7 @@
 #define DECODE_SAMSUNG
 #include <IRremote.hpp>
 
-const uint8_t IR_PIN = 4;   // same pin as in the mesh firmware
+const uint8_t IR_PIN = 13;  // same pin as in the mesh firmware
 
 void setup() {
   Serial.begin(115200);
